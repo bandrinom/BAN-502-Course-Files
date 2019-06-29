@@ -1,0 +1,132 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+options(tidyverse.quiet = TRUE)
+library(tidyverse)
+library(nnet)
+library(caret)
+```
+
+```{r}
+parole = read_csv("parole.csv")
+```
+
+```{r}
+parole = parole %>% mutate(male = as_factor(as.character(male))) %>%
+mutate(male = fct_recode(male,"male" = "1","female" = "0")) 
+```
+
+```{r}
+parole = parole %>% mutate(race = as_factor(as.character(race))) %>%
+mutate(race = fct_recode(race,"white" = "1","otherwise" = "2")) 
+```
+
+```{r}
+parole = parole %>% mutate(state = as_factor(as.character(state))) %>%
+mutate(state = fct_recode(state,"other" = "1","Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4")) 
+```
+
+```{r}
+parole = parole %>% mutate(crime = as_factor(as.character(crime))) %>%
+mutate(crime = fct_recode(crime,"other" = "1","larceny" = "2", "drug-related" = "3", "driving-related" = "4")) 
+```
+
+```{r}
+parole = parole %>% mutate(multiple.offenses = as_factor(as.character(multiple.offenses))) %>%
+mutate(multiple.offenses = fct_recode(multiple.offenses,"multiple.offenses" = "1","otherwise" = "0")) 
+```
+
+```{r}
+parole = parole %>% mutate(violator = as_factor(as.character(violator))) %>%
+mutate(violator = fct_recode(violator,"violation" = "1","no-violation" = "0")) 
+```
+
+```{r}
+set.seed(12345) 
+train.rows = createDataPartition(y = parole$violator, p=0.7, list = FALSE)
+train = parole[train.rows,] 
+test = parole[-train.rows,]
+```
+
+```{r}
+fitControl = trainControl(method = "cv", 
+                           number = 10)
+
+nnetGrid <-  expand.grid(size = 12, decay = 0.1)
+
+set.seed(1234)
+nnetBasic = train(violator ~ ., 
+                 parole,
+                 method = "nnet",
+                 tuneGrid = nnetGrid,
+                 trControl = fitControl,
+                 verbose = FALSE,
+                 trace = FALSE)
+```
+
+```{r}
+nnetBasic
+```
+
+```{r}
+predNetBasic = predict(nnetBasic, train)
+```
+
+```{r}
+confusionMatrix(predNetBasic, train$violator)
+```
+
+Comment on the model quality.
+// This seems to be a good model, the accuracy level is high and is consistent with other model that we have developed before.
+
+```{r}
+fitControl2 = trainControl(method = "cv", 
+                           number = 10)
+
+nnetGrid2 =  expand.grid(size = seq(from = 1, to = 12, by = 1), 
+                        decay = seq(from = 0.1, to = 0.5, by = 0.1))
+set.seed(1234)
+nnetFit = train(violator ~ ., 
+                 parole,
+                 method = "nnet",
+                 trControl = fitControl2,
+                 tuneGrid = nnetGrid2,
+                 verbose = FALSE,
+                trace = FALSE)
+```
+
+```{r}
+nnetFit
+```
+
+```{r}
+predNet = predict(nnetFit, train)
+```
+
+```{r}
+confusionMatrix(predNet, train$violator)
+```
+
+```{r}
+predNetBasic_test = predict(nnetBasic, newdata = test)
+```
+
+```{r}
+confusionMatrix(predNetBasic_test, test$violator)
+```
+
+```{r}
+predNet_test = predict(nnetFit, newdata = test)
+```
+
+```{r}
+confusionMatrix(predNet_test, test$violator)
+```
+
+Comment on whether there appears to be overfitting in one or both of your models from Tasks 2 and 4.
+
+The accuracy levels from task 2 are 0.9302 for the training set and 0.9158, the accuracy level from task 4 are 0.9049 for the training set and 0.9061 for the testing set. In my opinion neither of the models look too overfitting, however, task 4 shows a greater difference in accuracy between training and testing sets.
+

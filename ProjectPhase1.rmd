@@ -1,0 +1,139 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+options(tidyverse.quiet = TRUE)
+library(tidyverse)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(ranger) #for random forests
+library(caret)
+library(GGally)
+library(MASS)
+library(leaps)
+```
+
+```{r}
+rain = read_csv("rain.csv")
+```
+
+```{R}
+str(rain)
+summary(rain)
+```
+
+```{r}
+rain = rain %>% mutate(RainTomorrow = as.factor(RainTomorrow)) %>% 
+  mutate(WindGustDir = as.factor(WindGustDir)) %>% mutate(Date = as.factor(Date)) %>%
+  mutate(WindDir9am = as.factor(WindDir9am)) %>% mutate(WindDir3pm = as.factor(WindDir3pm)) %>% 
+  mutate(RainToday = as.factor(RainToday))
+```
+
+```{r}
+str(rain)
+summary(rain)
+```
+
+```{r}
+vim_plot = aggr(rain, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+```
+
+```{r}
+rain = rain %>% dplyr::select(-Cloud9am)
+rain = rain %>% dplyr::select(-Cloud3pm)
+rain = rain %>% dplyr::select(-Date)
+
+vim_plot = aggr(rain, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+```
+
+```{r}
+rain = rain %>% dplyr::select(c("MinTemp","MaxTemp","Rainfall","WindGustSpeed","Humidity9am","Pressure9am","Temp9am", "RainToday", "RainTomorrow", "WindSpeed9am"))
+```
+
+```{r}
+imp = mice(rain, m=1, method='pmm', printFlag=FALSE)
+summary(imp)
+```
+
+```{r}
+rain_complete = complete(imp) 
+summary(rain_complete)
+```
+
+```{r}
+ggcorr(rain_complete, label = TRUE)
+```
+
+
+```{r}
+ggplot(rain_complete, aes(x = RainToday, fill = RainTomorrow )) + geom_bar(position = "fill") + theme_bw()
+```
+
+```{r}
+ggpairs(rain_complete)
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y=Temp9am)) + geom_boxplot()
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y=Humidity9am)) + geom_boxplot()
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y=Pressure9am)) + geom_boxplot()
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y=WindGustSpeed)) + geom_boxplot()
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y=WindSpeed9am)) + geom_boxplot()
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y= MaxTemp)) + geom_boxplot()
+```
+
+```{r}
+ggplot(rain_complete,aes(x=RainTomorrow,y= MinTemp)) + geom_boxplot()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

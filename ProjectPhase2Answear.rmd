@@ -1,0 +1,208 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+options(tidyverse.quiet = TRUE)
+library(tidyverse)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(ranger) #for random forests
+library(caret)
+library(GGally)
+library(MASS)
+library(leaps)
+library(e1071)
+library(rpart) #for classification trees
+library(RColorBrewer) #better visualization of classification trees
+library(rattle) #better visualization of classification trees
+library(nnet) #for neural networks
+library(ROCR)
+```
+
+```{r}
+rain = read_csv("rain.csv")
+```
+
+```{r}
+rain = rain %>% mutate(RainTomorrow = as.factor(RainTomorrow)) %>% 
+  mutate(WindGustDir = as.factor(WindGustDir)) %>% mutate(Date = as.factor(Date)) %>%
+  mutate(WindDir9am = as.factor(WindDir9am)) %>% mutate(WindDir3pm = as.factor(WindDir3pm)) %>% 
+  mutate(RainToday = as.factor(RainToday))
+```
+
+```{r}
+rain = rain %>% dplyr::select(-Cloud9am)
+rain = rain %>% dplyr::select(-Cloud3pm)
+rain = rain %>% dplyr::select(-Date)
+```
+
+```{r}
+rain = rain %>% dplyr::select(c("MinTemp","MaxTemp","Rainfall","WindGustSpeed","Humidity9am","Pressure9am","Temp9am", "RainToday", "RainTomorrow", "WindSpeed9am"))
+```
+
+```{r}
+imp = mice(rain, m=1, method='pmm', printFlag=FALSE)
+```
+
+```{r}
+rain_complete = complete(imp) 
+summary(rain_complete)
+```
+
+```{r}
+set.seed(1234) 
+train.rows = createDataPartition(y = rain_complete$RainTomorrow, p=0.7, list = FALSE) #70% in training
+train = rain_complete[train.rows,] 
+test = rain_complete[-train.rows,]
+```
+
+```{r}
+ctrl = trainControl(method = "cv",number = 10)
+
+set.seed(1234) 
+modkFold = train(RainTomorrow ~., rain_complete, method = "glm", trControl = ctrl)
+summary(modkFold)
+```
+
+```{r}
+predictions = predict(modkFold, type="prob")[,2] 
+head(predictions)
+```
+
+```{r}
+
+ROCRpred = prediction(predictions, rain_complete$RainTomorrow) 
+
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+```{r}
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+```{r}
+t1 = table(rain_complete$RainTomorrow,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(rain_complete)
+```
+
+```{r}
+tree1 = rpart(RainTomorrow  ~., train, method="class")
+fancyRpartPlot(tree1)
+```
+
+```{r}
+printcp(tree1)
+plotcp(tree1)
+```
+
+
+```{r}
+treepred = predict(tree1, train, type = "class")
+head(treepred)
+```
+
+```{r}
+confusionMatrix(treepred,train$RainTomorrow,positive="Yes")
+```
+
+```{r}
+treepred_test = predict(tree1, newdata=test, type = "class")
+head(treepred_test)
+```
+
+```{r}
+confusionMatrix(treepred_test,test$RainTomorrow,positive="Yes") 
+```
+
+```{r}
+fit_control = trainControl(method = "cv",  
+                           number = 10) 
+
+set.seed(1234)  
+rf_fit = train(x=train[,-9], y=train$RainTomorrow,    
+                method = "ranger",  
+                importance = "permutation",
+                trControl = fit_control,
+               num.trees = 100)
+```
+
+```{r}
+varImp(rf_fit)
+rf_fit
+```
+
+```{r}
+predRF = predict(rf_fit)
+head(predRF)
+```
+
+```{r}
+confusionMatrix(predRF, train$RainTomorrow)
+```
+```{r}
+summary(train)
+```
+
+```{r}
+predRF_test = predict(rf_fit, newdata = test)
+```
+
+```{r}
+confusionMatrix(predRF_test, test$RainTomorrow)
+```
+
+```{r}
+fitControl1 = trainControl(method = "cv", 
+                           number = 10)
+
+nnetGrid <-  expand.grid(size = 15, decay = 0.1)
+
+set.seed(1234)
+nnetBasic = train(RainTomorrow ~ ., 
+                 train,
+                 method = "nnet",
+                 tuneGrid = nnetGrid,
+                 trControl = fitControl1,
+                 verbose = FALSE)
+```
+
+```{r}
+nnetBasic
+```
+
+```{r}
+predNetBasicTest = predict(nnetBasic, newdata = test)
+```
+
+```{r}
+confusionMatrix(predNetBasicTest, test$RainTomorrow)
+```
+
+```{r}
+predNetBasicTrain = predict(nnetBasic, train)
+```
+
+```{r}
+confusionMatrix(predNetBasicTrain, train$RainTomorrow)
+```
+
+
+
+

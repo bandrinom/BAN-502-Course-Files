@@ -1,0 +1,212 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+library(tidyverse) 
+library(ROCR)
+library(MASS)
+library(caret)
+```
+
+```{r}
+parole = read_csv("parole.csv")
+```
+
+```{r}
+parole = parole %>% mutate(male = as_factor(as.character(male))) %>%
+mutate(male = fct_recode(male,"male" = "1","female" = "0")) 
+```
+
+```{r}
+parole = parole %>% mutate(race = as_factor(as.character(race))) %>%
+mutate(race = fct_recode(race,"white" = "1","otherwise" = "2")) 
+```
+
+```{r}
+parole = parole %>% mutate(state = as_factor(as.character(state))) %>%
+mutate(state = fct_recode(state,"other" = "1","Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4")) 
+```
+
+```{r}
+parole = parole %>% mutate(crime = as_factor(as.character(crime))) %>%
+mutate(crime = fct_recode(crime,"other" = "1","larceny" = "2", "drug-related" = "3", "driving-related" = "4")) 
+```
+
+```{r}
+parole = parole %>% mutate(multiple.offenses = as_factor(as.character(multiple.offenses))) %>%
+mutate(multiple.offenses = fct_recode(multiple.offenses,"multiple.offenses" = "1","otherwise" = "0")) 
+```
+
+```{r}
+parole = parole %>% mutate(violator = as_factor(as.character(violator))) %>%
+mutate(violator = fct_recode(violator,"violation" = "1","no-violation" = "0")) 
+```
+
+```{r}
+set.seed(12345)
+train.rows = createDataPartition(y = parole$violator, p=0.7, list = FALSE)
+train = parole[train.rows,] 
+test = parole[-train.rows,]
+```
+
+```{r}
+ggplot(train, aes(x = male, fill = violator )) + geom_bar() + theme_bw()
+```
+
+```{r}
+t1 = table(train$violator, train$male) 
+prop.table(t1, margin = 2 ) 
+```
+
+The proportion of males and females that have a violation of their parole is very similar.
+
+
+```{r}
+ggplot(train, aes(x = race, fill = violator )) + geom_bar() + theme_bw()
+```
+
+```{r}
+t2 = table(train$violator, train$race) 
+prop.table(t2, margin = 2 ) 
+```
+White race is less likely to have a violation of parole.
+
+```{r}
+ggplot(train, aes(x = state, fill = violator )) + geom_bar() + theme_bw()
+```
+
+```{r}
+t3 = table(train$violator, train$state) 
+prop.table(t3, margin = 2 ) 
+```
+
+Louisiana shows significately higher rates of violation of parole, but is not a good predictor by itself.
+
+```{r}
+ggplot(train, aes(x = crime, fill = violator )) + geom_bar(position = "fill") + theme_bw()
+```
+
+We can see that the probability of having a parole violator increases depending on the type of crime commited. 
+
+```{r}
+ggplot(train, aes(x = multiple.offenses, fill = violator )) + geom_bar() + theme_bw()
+```
+
+It makes sense to believe that a person with multiple offenses is more likely to violate parole. 
+
+```{r}
+mod1 = glm(violator ~ multiple.offenses , train, family = "binomial")
+summary(mod1)
+```
+
+It is intuitive to say from the model, that multiple offence people is more likely to be a parole violator. AIC value is 335.5 which seems low, but is hard to say how good the model is by itself. 
+
+```{r}
+allmod = glm(violator ~ male + race + multiple.offenses + state + crime , train, family = "binomial") 
+summary(allmod)  
+  
+emptymod = glm(violator ~1, train, family = "binomial")  
+summary(emptymod)
+```
+
+```{r}
+backmod = stepAIC(allmod, direction = "backward", trace = TRUE) 
+summary(backmod)
+```
+
+
+```{r}
+forwardmod = stepAIC(emptymod, direction = "forward", scope=list(upper=allmod,lower=emptymod),
+                      trace = TRUE) 
+summary(forwardmod) 
+```
+
+Both forward and backward regression show the same model, with the lowes AIC (252.42) using the state, multiple offenses and race variables. Based on the visualizations above, the model seem to be intuitive, race showed a significant difference for other races,  as well as multiple offences showed an increase when the person was incarcerated for multiple offenses, state showed significance specially in Virginia where the percentage of violation is significantely low, but these states where chosen for the dataset based on their high representation. 
+
+
+```{r}
+mod2 = glm(violator ~ state + multiple.offenses + race, train, family = "binomial")
+summary(mod2)
+```
+
+This is the exact same model that we had before.
+
+```{r}
+newdata = data.frame(state = "Louisiana", multiple.offenses = "multiple.offenses", race = "white")
+predict(forwardmod, newdata, type="response")
+```
+40.86%
+
+```{r}
+newdata = data.frame(state = "Kentucky", multiple.offenses = "otherwise", race = "otherwise")
+predict(forwardmod, newdata, type="response")
+```
+
+11.53%
+
+```{r}
+predictions = predict(mod2, type = "response")
+head(predictions)
+```
+
+```{r}
+ROCRpred = prediction(predictions, train$violator) 
+
+###You shouldn't need to ever change the next two lines:
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.1161882)
+t1
+```
+
+```{r}
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+What is the accuracy, sensitivity, and specificity of the model on the training set given the cutoff
+from Task 7? What are the implications of incorrectly classifying a parolee?
+// 0.8414375, 0.7818182 and 0.8373206 respectively. Legal consequeses may arise, people can be wrongle denied or apporved parole requests. 
+
+```{r}
+t2 = table(train$violator,predictions > 0.5)
+t2
+(t2[1,1]+t2[2,2])/nrow(train)
+```
+
+0.5 yields 89.64% accuracy.
+
+ 
+
+## Brian Andrino - Module 3 assignment 2
+
+
+
+
+
+
+
+
+
+
+
+
+
